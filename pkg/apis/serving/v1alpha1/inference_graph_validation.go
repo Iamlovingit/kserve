@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"fmt"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"regexp"
@@ -36,6 +37,8 @@ const (
 	WeightNotProvidedError = "InferenceGraph[%s] Node[%s] Route[%s] missing the 'Weight'"
 	// InvalidWeightError defines the error message for sum of traffic weight is not 100
 	InvalidWeightError = "InferenceGraph[%s] Node[%s] splitter node: the sum of traffic weights for all routing targets should be 100"
+	// InvalidMirroringWeightError defines the error message for sum of traffic weight is not 100
+	InvalidMirroringWeightError = "InferenceGraph[%s] Node[%s] mirroring node: the weight shoule be in (1,100]"
 	// DuplicateStepNameError defines the error message for more than one step contains same name
 	DuplicateStepNameError = "Node \"%s\" of InferenceGraph \"%s\" contains more than one step with name \"%s\""
 	// TargetNotProvidedError defines the error message for inference graph target not specified
@@ -83,6 +86,11 @@ func (ig *InferenceGraph) ValidateCreate() error {
 	if err := validateInferenceGraphSplitterWeight(ig); err != nil {
 		return err
 	}
+
+	if err := validateInferenceGraphMirroringWeight(ig); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -177,6 +185,24 @@ func validateInferenceGraphSplitterWeight(ig *InferenceGraph) error {
 			}
 			if weight != 100 {
 				return fmt.Errorf(InvalidWeightError, ig.Name, name)
+			}
+		}
+	}
+	return nil
+}
+
+// validateInferenceGraphMirroringWeight of inference graph router type
+func validateInferenceGraphMirroringWeight(ig *InferenceGraph) error {
+	nodes := ig.Spec.Nodes
+	for name, node := range nodes {
+		if node.RouterType == Mirroring {
+			for _, route := range node.Steps {
+				if route.Weight == nil {
+					continue
+				}
+				if 0 >= *route.Weight || 100 < *route.Weight {
+					return fmt.Errorf(InvalidMirroringWeightError, ig.Name, name)
+				}
 			}
 		}
 	}
