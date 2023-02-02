@@ -20,13 +20,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/kserve/kserve/pkg/constants"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kserve/kserve/pkg/constants"
 
 	"github.com/tidwall/gjson"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -108,6 +109,30 @@ func routeStep(nodeName string, graph v1alpha1.InferenceGraphSpec, input []byte,
 			return input, nil //TODO maybe should fail in this case?
 		}
 		return executeStep(route, graph, input, headers)
+	}
+	if currentNode.RouterType == v1alpha1.Mirroring {
+		//* check the step len, if step is nil, return input directly
+		if currentNode.Steps == nil {
+			return input, nil
+		}
+		//* create goroutines for mirror service, and ignore response
+		for i := range currentNode.Steps {
+			step := currentNode.Steps[i]
+			var weight int64
+			if step.Weight != nil {
+				weight = *step.Weight
+			} else {
+				weight = 100
+			}
+			r := rand.New(rand.NewSource(time.Now().UnixNano()))
+			//generate num [0,100)
+			point := r.Intn(99)
+			if point < int(weight) {
+				go callService(step.ServiceURL, input, headers)
+			}
+		}
+		//* handle main service
+		return executeStep(&currentNode.Steps[0], graph, input, headers)
 	}
 	if currentNode.RouterType == v1alpha1.Ensemble {
 		ensembleRes := make([]chan map[string]interface{}, len(currentNode.Steps))
